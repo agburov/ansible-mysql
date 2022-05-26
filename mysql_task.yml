@@ -1,0 +1,97 @@
+- hosts: dev
+  become: true
+  vars_files:
+    - vars/default.yaml
+
+  tasks:
+    - name: Install aptitude using apt
+      apt:
+        name: aptitude
+        state: latest
+        update_cache: yes
+        force_apt_get: yes
+
+    - name: Install required system packages for Docker
+      apt:
+        name: "{{ docker_required_packages }}"
+        state: latest
+        update_cache: yes
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: "{{ docker_gpg_url }}"
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "{{ docker_repo }}"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name: "{{ docker_packges }}"
+        state: latest
+        update_cache: yes
+
+    - name: Install Python Docker modules
+      pip:
+        name:
+          - docker
+          - docker-compose
+
+    - name: Add user to docker group
+      user:
+        name: "{{ admin_user }}"
+        groups: docker
+        append: yes
+
+    - name: Copy docker compose file to target host
+      copy:
+        src: /home/user/Projects/mysql/docker-compose.yml
+        dest: /home/khan/mysql/
+        owner: "{{ admin_user }}"
+        group: docker
+        mode: 0644
+
+    - name: Copy docker environment file to target host
+      copy:
+        src: /home/user/Projects/mysql/.env
+        dest: /home/khan/mysql/
+        owner: "{{ admin_user }}"
+        group: docker
+        mode: 0644
+
+    - name: Run Docker compose
+      community.docker.docker_compose:
+        project_src: /home/khan/mysql/
+
+    - name: Remove docker environment file from target host
+      ansible.builtin.file:
+        path: /home/khan/mysql/.env
+        state: absent
+
+    - name: Waiting for MySQL server up
+      wait_for:
+        port: "3306"
+        host: "localhost"
+        delay: 15
+        timeout: 30
+        state: started
+        msg: "Something wrong with server settings"
+
+    - name: Create database user with name 'jackson' and password 'qwer1' with all database privileges
+      mysql_user:
+        login_user: "{{ mysql_root_user }}"
+        login_password: "{{ mysql_root_pass }}"
+        name: jakson
+        password: qwer1
+        host: "localhost"
+        priv: "*.*:ALL"
+        check_implicit_admin: true
+
+    - name: Create a new database with name 'dev_db'
+      mysql_db:
+        login_user: "{{ mysql_root_user }}"
+        login_password: "{{ mysql_root_pass }}"
+        name: dev_db
+        state: present
